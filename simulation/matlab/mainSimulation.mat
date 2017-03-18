@@ -1,0 +1,225 @@
+clf
+%Simple analog diaplay
+%trash any existing analog i/o objects
+delete(daqfind);
+ 
+%define the input
+adaptor = 'nidaq';
+adaptorData = daqhwinfo(adaptor);
+%get the adaptor id, 
+%but note that the brackets are curly {}
+%because the struct is an cellarray
+id = adaptorData.InstalledBoardIds{1} ;
+ 
+ai = analoginput(adaptor, id);
+%set DAQ sample rate as 10000 times per second, 
+%and sample 50000 times per trigger to get 5 s data one time.
+set(ai,'SampleRate',10000);
+set(ai,'SamplesPerTrigger',50000);
+%set DAQ single end input type
+set(ai,'InputType','SingleEnded');
+% Create an analog input object with one channel.
+ch = addchannel(ai,[3]);
+ 
+%Create quit button
+quitbutton=uicontrol('style','pushbutton',...
+   'string','Quit', ...
+   'fontsize',12, ...
+   'position',[580,670,50,20], ...
+   'callback','quitit=1;');
+ 
+%create stop button
+stopbutton=uicontrol('style','pushbutton',...
+    'string','Stop',...
+    'fontsize',12,...
+    'position',[520,670,50,20],...
+    'callback','uiwait();');
+ 
+%create start button
+startbutton=uicontrol('style','pushbutton',...
+    'string','Start',...
+    'fontsize',12,...
+    'position',[460,670,50,20],...
+    'callback','uiresume();');
+ 
+%create calibration text
+calibox=uicontrol('style','text',...
+    'string','Calibration',...
+    'BackgroundColor','red',...
+    'fontsize',12,...
+    'position',[360,670,90,20]);
+ 
+ 
+%make some axes
+axeshandle = axes(...
+   'position',[.2 .2 .7 .7],...
+   'xlim',[-1 1],...
+   'ylim',[-1 1]);
+ 
+%set size of figure
+set(gcf,'Position',[300,100,1024,700]);
+ 
+%load gesture data used for machine learning
+load('gesturedata.mat')
+ 
+%generate cluster
+sample=[rightv;leftv;squeezev;turnv];
+[sample,ma]=guiyi(sample);
+[m1,n1]=size(rightv);
+[m2,n2]=size(leftv);
+[m3,n3]=size(squeezev);
+[m4,n4]=size(turnv);
+label1=1*ones(m1,1);
+label2=2*ones(m2,1);
+label3=3*ones(m3,1);
+label4=4*ones(m4,1);
+ 
+label=[label1;label2;label3;label4];
+ 
+quitit=0; %wait for a quit button push
+ 
+%null out x and y
+x=[];y=[];
+bkgndcolor = [1,1,1];
+dt=0.0001;
+maxt=5;
+time = dt:dt:maxt;
+%build a EMG plot with zero data
+buffer=zeros(1,length(time));
+subplot(2,2,1)
+lh1 = plot(time, buffer);
+ylabel('rawEMG');
+%build a gesture signal with zero data
+subplot(2,2,2)
+lh2 = plot(time, buffer);
+ylabel('gesturesignal');
+%display picture
+subplot(2,2,3)
+lh3 = plot(time, buffer);
+fn=1;rn=1;sn=1;%fn=figurenumber, rn=rotate position, sn=size of the picture
+file=sprintf('Image_%d%d%d.jpg',fn,rn,sn);
+fi=imread(file); 
+imshow(fi);
+%display gesture type
+subplot(2,2,4)
+lh4 = plot(time, buffer);
+gn=0;
+file=sprintf('Gesture_%d.jpg',gn);
+fg=imread(file); 
+imshow(fg);
+ 
+%signalend is used to indicate whether the gesture signal aquire from last
+%5 s end, if signalend=0 the gesture signal end, 
+%if signalend=1 the gesture signal doesn't end
+%initialize signalend
+signalend=0;
+ 
+%get first 5 s EMG data to calibrate and set the threshold level
+drawnow;
+%acquire data from daq board
+start(ai);
+buffer=getdata(ai);
+%threshold is the threshold to determine whether the gesture signal begin
+threshold=10*sqrt(sum((buffer-mean(buffer)).^2)/50000);
+%threshold2 is the threshold to determine the end of the gesture signal
+threshold2=1.5*sqrt(sum((buffer-mean(buffer)).^2)/50000);
+%when calibration end, the text change to green
+set(calibox,'BackgroundColor','green');
+j=1;
+ 
+%main loop
+while (quitit==0) 
+    drawnow; %need this in the loop for controls to work
+    %acquire data from daq board
+    start(ai);
+    %get EMG data
+    buffer=getdata(ai);
+    EMGbuffer=buffer;
+    %remove the mean value 
+    EMGbuffer=EMGbuffer-mean(EMGbuffer);
+    %plot orignial EMG data
+    set(lh1,'ydata',EMGbuffer);
+    
+    %initialize the end index of gesture signal
+    end_index=0;
+    %Determine whether the gesture signal extracted from last 5 s ends
+    if signalend
+        %if not, combine the gesture signal extracted from last 5 s with new 5 s signal 
+        newbuffer(1:length(bufferinitial))=bufferinitial;
+        newbuffer(length(bufferinitial)+1:length(bufferinitial)+50000)=EMGbuffer;
+        %initialize the start index of gesture signal
+        start_index=1;
+        %find the end index of gesture signal
+        [endsignal,end_index]=findsignal(1,1000,newbuffer,threshold2);
+        %signalbuffer is used to store gesture signal
+        signalbuffer=newbuffer(start_index:end_index);
+        %cut the redundant end
+        signalbuffer=cutsignal(signalbuffer,threshold);
+        %plot gesture signal
+        tt=1:length(signalbuffer);
+        set(lh2,'xdata',tt,'ydata',signalbuffer);
+        %get the signal characters
+        [meannm,stdnm,lengthnm, peakvalue,peaknu,peaklc,fft0]=evaluation(signalbuffer,2*threshold2);
+        value=[meannm,stdnm,lengthnm, peakvalue,peaknu,peaklc,fft0];
+        %normalize characters
+        value=chu(value,ma);
+        %use k-nearest neighbor algorithm to classify signal
+        result=distance(20,221,7,value,sample,label);
+        gesture=classify(result);
+        %change the picture and show the gesture
+        [fn,rn,sn,gn]=changeimage(gesture,fn,rn,sn,gn);
+        end_index=end_index-length(bufferinitial);
+        %set signalend to indicate that this gesture signal finished
+        signalend=0;   
+    end
+    %find new gesture signal
+    signal_index=find(EMGbuffer>threshold);%signal_index are all the index of EMGbuffer have the value larger than threshold
+    if signal_index
+        k=find(signal_index>end_index);%k stores the indexes in signal_index larger than the end index of last gesture
+        if k
+            start_index=signal_index(k(1));%start_index indicate the start location of new gesture signal
+            while (start_index)
+                %find the end index of gesture signal
+                [endsignal,end_index]=findsignal(start_index,1000,EMGbuffer,threshold2);
+                %determine whether the gesture signal ends in this 5 s
+                if endsignal
+                    %if so
+                    %signalbuffer is used to store gesture signal
+                    signalbuffer=EMGbuffer(start_index:end_index);
+                    %get rid of wrong detection caused by noise
+                    if (end_index-start_index)>2000
+                        %cut the redundant end
+                        signalbuffer=cutsignal(signalbuffer,threshold);
+                        %plot gesture signal
+                        tt=1:length(signalbuffer);
+                        set(lh2,'xdata',tt,'ydata',signalbuffer);
+                        %get the signal characters
+                        [meannm,stdnm,lengthnm, peakvalue,peaknu,peaklc,fft0]=evaluation(signalbuffer,2*threshold2);
+                        value=[meannm,stdnm,lengthnm, peakvalue,peaknu,peaklc,fft0];
+                        value=chu(value,ma);%normalize characters
+                        %use k-nearest neighbor algorithm to classify signal
+                        result=distance(20,221,7,value,sample,label);
+                        gesture=classify(result);
+                        %change the picture and show the gesture
+                        [fn,rn,sn,gn]=changeimage(gesture,fn,rn,sn,gn);
+                    end
+                    %find the start position of next gesture signal
+                    if find(signal_index>end_index)
+                        k=find(signal_index>end_index);
+                        start_index=signal_index(k(1));
+                    else
+                        start_index=0;
+                    end
+                            
+                else
+                    %if not, set signalend to 1
+                    %use bufferinitial to store gesture signal detected in this 5 s                   
+                    bufferinitial=EMGbuffer(start_index:50000);
+                    signalend=1;
+                    start_index=0;
+                end
+            end
+        end
+    end
+end
+close;

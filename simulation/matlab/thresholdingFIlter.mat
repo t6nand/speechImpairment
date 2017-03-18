@@ -1,0 +1,7 @@
+%cut the end of signal with the value smaller than threshold
+function [asignal]=cutsignal(isignal,threshold)
+k=find(isignal>threshold);
+l=length(k);
+end_index=k(l);
+asignal=isignal(1:end_index);
+end

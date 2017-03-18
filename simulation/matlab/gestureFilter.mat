@@ -1,0 +1,29 @@
+%Use to find the end of the gesture signal
+%i is the start position of gesture signal
+%dnum is the number of data use to determine the end of the signal
+%buffer stores the raw data begin from i
+%threshold is the threshold to determine the end
+function [endsignal,end_index]=findsignal(i,dnum,buffer,threshold)
+%initialize the endsignal
+endsignal=0;
+e1=0;%e1 indicates whether the RMS of previous dnum data points is smaller than threshold
+end_index=i;
+while (endsignal==0) && (i+dnum-1<=length(buffer))
+    %calculate RMS of dnum data points
+    RMS=sqrt(sum(buffer(i:i+dnum-1).^2)/dnum);
+    e=RMS<threshold;%e indicates whether the RMS of these dnum data points is smaller than threshold
+    if e
+        if e1
+            %if RMS of these dnum data points and previous dnum data points
+            %are both smaller than threshold, then the gesture signal ends
+            endsignal=1;
+            end_index=i+dnum-1;
+        else
+            e1=1;
+        end
+    else
+        e1=0;
+    end
+    i=i+dnum-1;%find next dnum data points
+end
+end

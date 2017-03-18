@@ -1,0 +1,56 @@
+%change picture display
+%gesture indicates the classified gesture type
+%fn represents the number of picture
+%rn represents the rotation position of the picture
+%sn represents the size of the picture
+%gn represents the gesture type
+function [fn,rn,sn,gn]=changeimage(gesture,fn,rn,sn,gn)
+drawnow;
+gn=gesture;
+%display the gesture
+subplot(2,2,4)
+file=sprintf('Gesture_%d.jpg',gn);
+fg=imread(file); 
+imshow(fg);
+%change picture
+switch gesture
+    case 1
+        fn=fn+1;
+        rn=1;
+        sn=1;
+    case 2
+        fn=fn-1;
+        rn=1;
+        sn=1;
+    case 3
+        sn=sn+1;
+    otherwise
+        rn=rn+1;
+end
+if fn>3 
+    fn=fn-3; 
+else
+    if fn<1
+        fn=fn+3;
+    end
+end
+if rn>4 
+    rn=rn-4; 
+else
+    if rn<1
+        rn=rn+4;
+    end
+end
+if sn>4 
+    sn=sn-1;
+else
+    if sn<1
+        sn=sn+1;
+    end
+end
+subplot(2,2,3)
+file=sprintf('Image_%d%d%d.jpg',fn,rn,sn);
+fi=imread(file); 
+imshow(fi);
+end
+
